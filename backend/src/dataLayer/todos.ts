@@ -15,7 +15,7 @@ const XAWS = AWSXRay.captureAWS(AWS)
 
 const docClient: DocumentClient = new XAWS.DynamoDB.DocumentClient()
 const todosTable = process.env.TODOS_TABLE
-const todosByUserIndex = process.env.TODOS_BY_USER_INDEX
+// const todosByUserIndex = process.env.TODOS_BY_USER_INDEX
 
 export async function todoItemExists(todoId: string): Promise<boolean> {
   const item = await getTodoItem(todoId)
@@ -26,7 +26,7 @@ export async function getTodosByUserId(userId: string): Promise<TodoItem[]> {
   const result = await docClient
     .query({
       TableName: todosTable,
-      IndexName: todosByUserIndex,
+      
       KeyConditionExpression: 'userId = :userId',
       ExpressionAttributeValues: {
         ':userId': userId

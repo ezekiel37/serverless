@@ -26,7 +26,6 @@ provider:
 
   environment:
     TODOS_TABLE: Todos-${self:provider.stage}
-    TODOS_BY_TODO_ID_INDEX: TodosByTodoIdIndex
     ATTACHMENTS_S3_BUCKET: serverless-todos-attachments-20210806-${self:provider.stage}
     SIGNED_URL_EXPIRATION: 300
     AUTH0_DOMAIN_ID: code-example.eu
@@ -59,7 +58,7 @@ functions:
       - Effect: Allow
         Action:
           - dynamodb:Query
-        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.TODOS_BY_TODO_ID_INDEX}
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
       - Effect: Allow
         Action:
           - xray:GetSamplingRules
@@ -217,8 +216,6 @@ resources:
       Type: AWS::DynamoDB::Table
       Properties:
         AttributeDefinitions:
-          - AttributeName: todoId
-            AttributeType: S
           - AttributeName: userId
             AttributeType: S
           - AttributeName: createdAt
@@ -227,17 +224,10 @@ resources:
           - AttributeName: userId
             KeyType: HASH
           - AttributeName: createdAt
-            KeyType: RANGE 
+            KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
         TableName: ${self:provider.environment.TODOS_TABLE}
-        GlobalSecondaryIndexes:
-          - IndexName: ${self:provider.environment.TODOS_BY_TODO_ID_INDEX}
-            KeySchema:
-              - AttributeName: todoId
-                KeyType: HASH
-            Projection:
-              ProjectionType: ALL
-
+      
     AttachmentsBucket:
       Type: AWS::S3::Bucket
       Properties:
