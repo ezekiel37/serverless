@@ -1,67 +1,25 @@
 import 'source-map-support/register'
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import * as middy from 'middy'
-import * as uuid from 'uuid'
-import { cors, httpErrorHandler } from 'middy/middlewares'
+import { APIGatewayProxyEvent, APIGatewayProxyResult, APIGatewayProxyHandler } from 'aws-lambda'
+import { generateUploadUrl } from '../../businessLogic/todos'
+import { getUserId } from '../utils'
 
-import {
-  generateSignedUrl,
-  updateAttachmentUrl
-} from '../../businessLogic/todos'
-import CustomError from '../../utils/CustomError'
-import { createLogger } from '../../utils/logger'
+export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  console.log('Processing event: ', event)
 
-const logger = createLogger('generateUploadUrl')
+  const userId = getUserId(event)
+  const todoId = event.pathParameters.todoId
+  
+  const uploadUrl = await generateUploadUrl(userId, todoId)
 
-export const handler = middy(
-  async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-    logger.info('generateUploadUrl event', { event })
-
-    const todoId = event.pathParameters.todoId
-    const userId = event.requestContext.authorizer.principalId
-    const attachmentId = uuid.v4()
-
-    const uploadUrlRes = generateSignedUrl(attachmentId)
-
-    logger.info('Generating signed url ', uploadUrlRes)
-
-    if (uploadUrlRes instanceof CustomError) {
-      return {
-        statusCode: uploadUrlRes.code,
-        headers: {
-          'Access-Control-Allow-Origin': '*'
-        },
-        body: JSON.stringify({ msg: uploadUrlRes.message })
-      }
-    }
-
-    const uploadAttachmentUrlRes = await updateAttachmentUrl(
-      userId,
-      todoId,
-      attachmentId
-    )
-    if (uploadAttachmentUrlRes instanceof CustomError) {
-      return {
-        statusCode: uploadAttachmentUrlRes.code,
-        headers: {
-          'Access-Control-Allow-Origin': '*'
-        },
-        body: JSON.stringify({ msg: uploadAttachmentUrlRes.message })
-      }
-    }
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify({ uploadUrl: uploadUrlRes })
-    }
+  return {
+    statusCode: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Credentials': true
+    },
+    body: JSON.stringify({
+      uploadUrl
+    })
   }
-)
-
-handler.use(httpErrorHandler()).use(
-  cors({
-    credentials: true
-  })
-)
+}

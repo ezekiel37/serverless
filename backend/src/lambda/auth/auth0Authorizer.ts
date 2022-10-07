@@ -1,18 +1,15 @@
 import { CustomAuthorizerEvent, CustomAuthorizerResult } from 'aws-lambda'
 import 'source-map-support/register'
 
+import Axios from 'axios'
 import { verify, decode } from 'jsonwebtoken'
 import { createLogger } from '../../utils/logger'
-import Axios from 'axios'
-import { Jwt } from '../../models/auth/Jwt'
-import { JwtPayload } from '../../models/auth/JwtPayload'
+import { Jwt } from '../../auth/Jwt'
+import { JwtPayload } from '../../auth/JwtPayload'
 
 const logger = createLogger('auth')
 
-const jwksURL = 'https://dev-hp2a8-2o.us.auth0.com/.well-known/jwks.json'
-
-
-let cachedCertificate
+const jwksUrl = 'https://dev-hp2a8-2o.us.auth0.com/.well-known/jwks.json'
 
 export const handler = async (
   event: CustomAuthorizerEvent
@@ -37,7 +34,7 @@ export const handler = async (
     }
   } catch (e) {
     logger.error('User not authorized', { error: e.message })
-    // logger.error('User not authorized',  jwtToken.sub )
+
     return {
       principalId: 'user',
       policyDocument: {
@@ -56,15 +53,24 @@ export const handler = async (
 
 async function verifyToken(authHeader: string): Promise<JwtPayload> {
   const token = getToken(authHeader)
-  const jwt = decode(token, { complete: true }) as Jwt
-  logger.info(`jwt after decoding: ${jwt}`)
+  const jwt: Jwt = decode(token, { complete: true }) as Jwt
+  const kid = jwt.header.kid
+  let cert
 
-  const keyId = jwt.header.kid
-  logger.info(`keyId: ${jwt}`)
+  try {
+    const jwks = await Axios.get(jwksUrl)
+    const signingKey = jwks.data.keys.find(k => k.kid === kid)
 
-  const pemCertificate = await getCertificateByKeyId(keyId)
+    if (!signingKey) {
+      throw new Error(`No signing key matching the kid '${kid}' was found`);
+    }
 
-  return verify(token, pemCertificate, { algorithms: ['RS256'] }) as JwtPayload
+    cert = `-----BEGIN CERTIFICATE-----\n${signingKey.x5c[0]}\n-----END CERTIFICATE-----`
+  } catch (e) {
+    logger.error('Failed to retrieve auth0 certificate', { error: e.message })
+  }
+  
+  return verify(token, cert, { algorithms: ['RS256'] }) as JwtPayload
 }
 
 function getToken(authHeader: string): string {
@@ -77,40 +83,4 @@ function getToken(authHeader: string): string {
   const token = split[1]
 
   return token
-}
-
-async function getCertificateByKeyId(keyId: string): Promise<string> {
-  if (cachedCertificate) return cachedCertificate
-
-  const response = await Axios.get(jwksURL)
-  const keys = response.data.keys
-
-  if (!keys || !keys.length) throw new Error('No JWKS keys found')
-
-  const signingKeys = keys.filter(
-    (key) =>
-      key.use === 'sig' &&
-      key.kty === 'RSA' &&
-      key.alg === 'RS256' &&
-      key.n &&
-      key.e &&
-      key.kid === keyId &&
-      key.x5c &&
-      key.x5c.length
-  )
-
-  if (!signingKeys.length) throw new Error('No JWKS signing keys found')
-
-  const matchedKey = signingKeys[0]
-  const publicCertificate = matchedKey.x5c[0] // public key
-
-  cachedCertificate = getPemFromCertificate(publicCertificate)
-  logger.info('pemCertificate:', cachedCertificate)
-
-  return cachedCertificate
-}
-
-function getPemFromCertificate(cert: string): string {
-  let pemCert = cert.match(/.{1,64}/g).join('\n')
-  return `-----BEGIN CERTIFICATE-----\n${pemCert}\n-----END CERTIFICATE-----\n`
 }

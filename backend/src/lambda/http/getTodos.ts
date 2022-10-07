@@ -1,47 +1,25 @@
 import 'source-map-support/register'
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import * as middy from 'middy'
-import { cors } from 'middy/middlewares'
+import { APIGatewayProxyEvent, APIGatewayProxyResult, APIGatewayProxyHandler } from 'aws-lambda'
+import { getAllTodos } from '../../businessLogic/todos'
+import { getUserId } from '../utils'
 
-import { getTodos } from '../../businessLogic/todos'
-import { createLogger } from '../../utils/logger'
-import CustomError from '../../utils/CustomError'
+export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  console.log('Processing event: ', event)
 
-const logger = createLogger('getTodos')
+  const userId = getUserId(event)
 
-export const handler = middy(
-  async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-    logger.info('getTodos event', { event })
+  const items = await getAllTodos(userId)
+  items.forEach(item => delete item['userId'])
 
-    const userId = event.requestContext.authorizer.principalId
-
-    const res = await getTodos(userId)
-
-    let statusCode
-    let body
-
-    if (res instanceof CustomError) {
-      statusCode = res.code
-      body = JSON.stringify({ msg: res.message })
-    } else {
-      statusCode = 200
-      body = JSON.stringify({ items: res })
-    }
-
-    return {
-      statusCode,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Credentials': true
-      },
-      body
-    }
+  return {
+    statusCode: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Credentials': true
+    },
+    body: JSON.stringify({
+      items
+    })
   }
-)
-
-handler.use(
-  cors({
-    credentials: true
-  })
-)
+}

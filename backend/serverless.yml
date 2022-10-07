@@ -1,4 +1,3 @@
-# TODO: Change the name of the org
 org: ezekielojo
 app: serverless-todo-app
 service: serverless-todo-app
@@ -7,15 +6,11 @@ plugins:
   - serverless-webpack
   - serverless-iam-roles-per-function
   - serverless-plugin-tracing
-
-# frameworkVersion: '2'
+  
 
 provider:
   name: aws
   runtime: nodejs12.x
-  lambdaHashingVersion: '20201221'
-  apiGateway:
-    shouldStartNameWithService: true
 
   stage: ${opt:stage, 'dev'}
   region: ${opt:region, 'us-east-1'}
@@ -26,21 +21,21 @@ provider:
 
   environment:
     TODOS_TABLE: Todos-${self:provider.stage}
-    ATTACHMENTS_S3_BUCKET: serverless-todos-attachments-20210806-${self:provider.stage}
+    IMAGES_S3_BUCKET: serverless-todo-images-azs123fas12h-${self:provider.stage}
     SIGNED_URL_EXPIRATION: 300
-    AUTH0_DOMAIN_ID: code-example.eu
 
   logs:
     restApi: true
 
-  # iam:
-  #   role:
-  #     statements:
-  #       - Effect: Allow
-  #         Action:
-  #           - xray:PutTelemetryRecords
-  #           - xray:PutTraceSegments
-  #         Resource: '*'
+  # iamRoleStatements:
+  #   - Effect: "Allow"
+  #     Action:
+  #       - "xray:PutTraceSegments"
+  #       - "xray:PutTelemetryRecords"
+  #     Resource:
+  #       - "*"
+
+
 
 functions:
   Auth:
@@ -84,7 +79,8 @@ functions:
           authorizer: Auth
           request:
             schemas:
-              application/json: ${file(schemas/create-todo-model.json)}
+              application/json: ${file(schemas/create-todo-request.json)}
+          
     iamRoleStatements:
       - Effect: Allow
         Action:
@@ -115,12 +111,12 @@ functions:
           authorizer: Auth
           request:
             schemas:
-              application/json: ${file(schemas/update-todo-model.json)}
+              application/json: ${file(schemas/update-todo-request.json)}
+          
     iamRoleStatements:
       - Effect: Allow
         Action:
           - dynamodb:UpdateItem
-          - dynamodb:GetItem
         Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
       - Effect: Allow
         Action:
@@ -149,8 +145,11 @@ functions:
       - Effect: Allow
         Action:
           - dynamodb:DeleteItem
-          - dynamodb:GetItem
         Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - s3:DeleteObject
+        Resource: arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*
       - Effect: Allow
         Action:
           - xray:GetSamplingRules
@@ -178,11 +177,10 @@ functions:
       - Effect: Allow
         Action:
           - s3:PutObject
-        Resource: arn:aws:s3:::${self:provider.environment.ATTACHMENTS_S3_BUCKET}/*
+        Resource: arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*
       - Effect: Allow
         Action:
           - dynamodb:UpdateItem
-          - dynamodb:GetItem
         Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
       - Effect: Allow
         Action:
@@ -212,32 +210,41 @@ resources:
         RestApiId:
           Ref: ApiGatewayRestApi
 
+    RequestBodyValidator:
+      Type: AWS::ApiGateway::RequestValidator
+      Properties:
+        Name: "request-body-validator"
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ValidateRequestBody: true
+        ValidateRequestParameters: false
+
     TodosTable:
       Type: AWS::DynamoDB::Table
       Properties:
         AttributeDefinitions:
           - AttributeName: userId
             AttributeType: S
-          - AttributeName: createdAt
+          - AttributeName: todoId
             AttributeType: S
         KeySchema:
           - AttributeName: userId
             KeyType: HASH
-          - AttributeName: createdAt
+          - AttributeName: todoId
             KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
         TableName: ${self:provider.environment.TODOS_TABLE}
-      
+
     AttachmentsBucket:
       Type: AWS::S3::Bucket
       Properties:
-        BucketName: ${self:provider.environment.ATTACHMENTS_S3_BUCKET}
+        BucketName: ${self:provider.environment.IMAGES_S3_BUCKET}
         CorsConfiguration:
           CorsRules:
             - AllowedOrigins:
-                - '*'
+                - "*"
               AllowedHeaders:
-                - '*'
+                - "*"
               AllowedMethods:
                 - GET
                 - PUT
@@ -246,17 +253,16 @@ resources:
                 - HEAD
               MaxAge: 3000
 
-    AttachmentsBucketPolicy:
+    BucketPolicy:
       Type: AWS::S3::BucketPolicy
       Properties:
         PolicyDocument:
           Id: MyPolicy
-          Version: '2012-10-17'
+          Version: "2012-10-17"
           Statement:
             - Sid: PublicReadForGetBucketObjects
               Effect: Allow
-              Principal: '*'
-              Action: 's3:GetObject'
-              Resource: 'arn:aws:s3:::${self:provider.environment.ATTACHMENTS_S3_BUCKET}/*'
-        Bucket:
-          Ref: AttachmentsBucket
+              Principal: "*"
+              Action: "s3:GetObject"
+              Resource: "arn:aws:s3:::${self:provider.environment.IMAGES_S3_BUCKET}/*"
+        Bucket: !Ref AttachmentsBucket

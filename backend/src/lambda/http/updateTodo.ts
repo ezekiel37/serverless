@@ -1,47 +1,25 @@
 import 'source-map-support/register'
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import * as middy from 'middy'
-import { cors, httpErrorHandler } from 'middy/middlewares'
+import { APIGatewayProxyEvent, APIGatewayProxyHandler, APIGatewayProxyResult } from 'aws-lambda'
+import { updateTodoItem } from '../../businessLogic/todos'
+import { UpdateTodoRequest } from '../../requests/UpdateTodoRequest'
+import { getUserId } from '../utils'
 
-import { updateTodo } from '../../businessLogic/todos'
-import { UpdateTodoRequest } from '../../models/requests/UpdateTodoRequest'
-import CustomError from '../../utils/CustomError'
-import { createLogger } from '../../utils/logger'
+export const handler: APIGatewayProxyHandler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+  console.log('Processing event: ', event)
+  
+  const userId = getUserId(event)
+  const todoId = event.pathParameters.todoId
+  const updatedTodoRequest: UpdateTodoRequest = JSON.parse(event.body)
 
-const logger = createLogger('updateTodo')
+  await updateTodoItem(updatedTodoRequest, userId, todoId)
 
-export const handler = middy(
-  async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-    logger.info('updateTodo event', { event })
-
-    const todoId = event.pathParameters.todoId
-    const userId = event.requestContext.authorizer.principalId
-    const updatedTodo: UpdateTodoRequest = JSON.parse(event.body)
-
-    const res = await updateTodo(userId, todoId, updatedTodo)
-
-    let statusCode
-
-    if (res instanceof CustomError) {
-      statusCode = res.code
-    } else {
-      statusCode = 200
-    }
-
-    return {
-      statusCode,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Credentials': true
-      },
-      body: ''
-    }
+  return {
+    statusCode: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Credentials': true
+    },
+    body: JSON.stringify({})
   }
-)
-
-handler.use(httpErrorHandler()).use(
-  cors({
-    credentials: true
-  })
-)
+}

@@ -1,173 +1,51 @@
-import 'source-map-support/register'
 import * as uuid from 'uuid'
 
-import {
-  createTodoItem,
-  getTodosByUserId,
-  getTodoItem,
-  updateTodoItem,
-  deleteTodoItem,
-  updateAttachmentUrl as updateAttachmentUrlInDB
-} from '../dataLayer/todos'
-import { getUploadUrl, getAttachmentUrl } from '../storageLayer/todos'
+import { TodoItem } from '../models/TodoItem'
+import { TodoAccess } from '../dataLayer/todoAccess'
+import { CreateTodoRequest } from '../requests/CreateTodoRequest'
+import { UpdateTodoRequest } from '../requests/UpdateTodoRequest'
 
-import { TodoItem } from '../models/todos/TodoItem'
-import { TodoUpdate } from '../models/todos/TodoUpdate'
-import { CreateTodoRequest } from '../models/requests/CreateTodoRequest'
-import { UpdateTodoRequest } from '../models/requests/UpdateTodoRequest'
+const todoAccess = new TodoAccess()
 
-import { createLogger } from '../utils/logger'
-import CustomError from '../utils/CustomError'
+export async function getAllTodos(userId: string): Promise<TodoItem[]> {
 
-const logger = createLogger('businessLogic-todos')
+  return await todoAccess.getAllTodos(userId)
+}
 
-export async function getTodos(
+export async function createTodoItem(
+  createGroupRequest: CreateTodoRequest,
   userId: string
-): Promise<TodoItem[] | CustomError> {
-  try {
-    const todos = await getTodosByUserId(userId)
-    logger.info(`Todos of user: ${userId}`, JSON.stringify(todos))
-    return todos
-  } catch (error) {
-    const errorMsg = `Error occurred when getting user's todos`
-    logger.error(errorMsg)
-    return new CustomError(errorMsg, 500)
-  }
-}
+): Promise<TodoItem> {
 
-export async function createTodo(
-  userId: string,
-  createTodoRequest: CreateTodoRequest
-): Promise<TodoItem | CustomError> {
-  const todoId = uuid.v4()
-
-  const newItem: TodoItem = {
+  return await todoAccess.createTodoItem({
     userId,
-    todoId,
-    createdAt: new Date().toISOString(),
+    todoId: uuid.v4(),
     done: false,
-    attachmentUrl: null,
-    ...createTodoRequest
-  }
-
-  try {
-    await createTodoItem(newItem)
-    logger.info(`Todo ${todoId} for user ${userId}:`, {
-      userId,
-      todoId,
-      todoItem: newItem
-    })
-    return newItem
-  } catch (error) {
-    const errorMsg = `Error occurred when creating user todo item`
-    logger.error(errorMsg)
-    return new CustomError(errorMsg, 500)
-  }
+    createdAt: new Date().toISOString(),
+    ...createGroupRequest
+  })
 }
 
-export async function updateTodo(
-  userId: string,
-  todoId: string,
-  updateTodoRequest: UpdateTodoRequest
-): Promise<void | CustomError> {
-  try {
-    const item = await getTodoItem(todoId)
+export async function generateUploadUrl(userId: string, todoId: string): Promise<string> {
+  const uploadUrl = await todoAccess.getSignedUrl(todoId)
+  await todoAccess.updateAttachmentUrl(userId, todoId)
 
-    if (!item) throw new CustomError('Item not found', 404)
-
-    if (item.userId !== userId) {
-      throw new CustomError('User is not authorized to update item', 403)
-    }
-
-    await updateTodoItem(todoId, updateTodoRequest as TodoUpdate)
-    logger.info(`Updating todo ${todoId} for user ${userId}:`, {
-      userId,
-      todoId,
-      todoUpdate: updateTodoRequest
-    })
-  } catch (error) {
-    if (!error.code) {
-      error.code = 500
-      error.message = 'Error occurred when updating todo item'
-    }
-    logger.error(error.message)
-    return error
-  }
+  return uploadUrl
 }
 
-export async function deleteTodo(
+export async function updateTodoItem(
+  updateTodoRequest: UpdateTodoRequest,
   userId: string,
   todoId: string
-): Promise<void | CustomError> {
-  try {
-    const item = await getTodoItem(todoId)
+): Promise<void> {
 
-    if (!item) throw new CustomError('Item not found', 404)
-
-    if (item.userId !== userId) {
-      throw new CustomError('User is not authorized to delete item', 403)
-    }
-
-    await deleteTodoItem(todoId)
-
-    logger.info(`Deleting todo ${todoId} for user ${userId}:`, {
-      userId,
-      todoId
-    })
-  } catch (error) {
-    if (!error.code) {
-      error.code = 500
-      error.message = 'Error occurred when deleting todo item'
-    }
-    logger.error(error.message)
-    return error
-  }
+  await todoAccess.updateTodoItem(updateTodoRequest, userId, todoId)
 }
 
-export async function updateAttachmentUrl(
-  userId: string,
-  todoId: string,
-  attachmentId: string
-): Promise<void | CustomError> {
-  try {
-    const attachmentUrl = getAttachmentUrl(attachmentId)
+export async function deleteTodoItem(userId: string, todoId: string) {
 
-    const item = await getTodoItem(todoId)
-
-    if (!item) throw new CustomError('Item not found', 404)
-
-    if (item.userId !== userId) {
-      throw new CustomError('User is not authorized to update item', 403)
-    }
-
-    await updateAttachmentUrlInDB(todoId, attachmentUrl)
-
-    logger.info(
-      `Updating todo ${todoId} with attachment URL ${attachmentUrl}`,
-      {
-        userId,
-        todoId
-      }
-    )
-  } catch (error) {
-    if (!error.code) {
-      error.code = 500
-      error.message = 'Error occurred when deleting todo item'
-    }
-    logger.error(error.message)
-    return error
-  }
-}
-
-export function generateSignedUrl(attachmentId: string): string | CustomError {
-  try {
-    const uploadUrl = getUploadUrl(attachmentId)
-    logger.info(`Presigned Url is generated: ${uploadUrl}`)
-
-    return uploadUrl
-  } catch (error) {
-    const errorMsg = 'Error occurred when generating presigned Url to upload'
-    logger.error(errorMsg , error)
-    return new CustomError(errorMsg, 500)
-  }
+  await Promise.all([
+    todoAccess.deleteTodoItem(userId, todoId),
+    todoAccess.deleteTodoItemAttachment(todoId)
+  ])  
 }
